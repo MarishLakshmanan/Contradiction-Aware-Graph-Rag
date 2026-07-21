@@ -1,0 +1,19 @@
+# Python-generated files
+__pycache__/
+*.py[oc]
+build/
+dist/
+wheels/
+*.egg-info
+
+# Environment variables
+.env
+
+# Virtual environments
+.venv
+.langgraph_api
+chroma
+notebooks
+.claude/settings.local.json
+.python-version
+CLAUDE.md".env" 
