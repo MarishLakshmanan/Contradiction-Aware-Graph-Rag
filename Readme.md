@@ -1,56 +1,52 @@
-# Graph-RAG
+# Graph RAG
 
-This is a Graph RAG pipeline project where the graph will be aware of contradiction between the sources.
-This project is split into four phases, where the first is just a simple Vanilla RAG pipeline with Langgraph and chromaDB.
+Graph RAG lets you ingest research papers on any topic from arXiv, then ask questions against them through a LangGraph agent. Answers are grounded in the retrieved paper excerpts, and the agent also pulls in related papers from each source's citation graph for extra background. Topics aren't fixed: you can ingest as many as you want, and each chat picks which one to query.
 
-## Topic
+## Technologies
 
-`Do larger language models actually reason better, or just pattern-match better?`
+- **Python 3.13**, managed with **uv** (`pyproject.toml` + `uv.lock`)
+- **LangChain / LangGraph**: the agent graph, query rewriting, answer generation
+- **Anthropic Claude**: the chat/reasoning model (`init_chat_model`)
+- **HuggingFace** (router inference API): embeddings
+- **Chroma Cloud**: vector storage (chunks, paper metadata, the topics registry)
+- **PyMuPDF**: in-process PDF text extraction (no external conversion service)
+- **arXiv API**: paper discovery/fetch
+- **Semantic Scholar API** + **NetworkX**: one-hop citation graph per paper
+- **Gradio**: the chat UI and the ingestion pipeline UI
+- **LangGraph Platform (LangSmith)**: hosts the deployed agent server
+- **Hugging Face Spaces**: hosts both deployed Gradio apps
 
-## Phase-1 Steps
+## Pipeline
 
-1. Have a class to fetch documents related to a topic from arXiv api, then chunk them and then store the chunks in a csv file.
-   1. So after fetching the documents from arxiv, store the metadata like title, id, pdf_url and abstract in csv file
-   2. On the extractor download the pdf, send it to the grobid and then extract the content and add the extracted content to a separate csv file with only one column and update the content csv_file path in the parent csv_file
-   3. Folder structure: data -> metadata.csv, extracted_content, extracted_content > [article_id.csv]
-2. For chunking will use section chunking and for each document will have a separate csv file.
-3. Once the chunking is done will embed them and push them into chromaDB.
-   1. along with vector we also need to push metadata
-      1. The problem is where can I get the metadata I could again parse the csv file but its not efficient maybe I can the metadata in tag when I create the md file and parse it separately while chunking.
-   2. for every chunk we will push the article ID as a metadata field
-   3. Add for now in the chromaDB along with the vector will also push actual chunk content
-   4. Now using the id we can easily point out to which research paper the answer was referred from but we can't link to where exactly in the research paper. that needs some more tweaking while processing the xml. maybe we can do that later.
-4. After will create a dataset for evaluation and test it.
-   1. For evaluation from the metadata collection in chromadb pull 3 documents randomly
-   2. extract the content from their pdfs and randomly choose a bigger chunk using [i:j], and pass it to an llm along with the papers abstract for gettting the query. then store the query in a {collection}\_test in chromadb
-   3. Now we have a chromaDB collection which has an query, document, article_id and embedding for that query using this we can easily run an eval script
-   4. the test collections already has an big chunk will check if the smaller chunk the collection.query returns is in the big chunk
-5. Once the evaluation is done will connect LLM to the graph
-   1. reorganize the files and built the graph
+**Ingestion** turns a topic into stored, queryable data. Give it a topic and it fetches matching papers from arXiv, downloads and chunks each one's text, embeds the chunks, builds a citation graph for each paper via Semantic Scholar, and stores everything in Chroma Cloud. Once a topic's papers are all in, it's registered and ready to query.
 
-## Tasks left
+**Inference** answers a question against one topic's ingested data. The agent rewrites your question into a better search query, retrieves the most relevant chunks, pulls in related papers from those chunks' citation graphs for extra context, and generates an answer grounded in the retrieved excerpts, citing sources.
 
-1. RAG is done, now have to figure out how to deploy this. first I need to figure out how to deploy the backend
-2. In the backend there is the langgraph server, I don't know how authentication between langgraph server and langgraph api works
-3. Then there is local embedding model which either I can use hugging face or VoyageAI. HuggingFace would be better cause It has a langchain helper so I can just reuse the client with small change
-4. The main problem is the grobbid server. maybe they have a public server if there is its great or else I don't know
-5. For chroma I can just create an free account in chroma cloud and use that.
+## How the LangGraph server connects it all
 
-## Commands
+The agent runs on a LangGraph server (locally via `langgraph dev`, or hosted on LangSmith). The chat UI talks to that server over the network for every question, telling it which topic to use, and streams the answer back as it's generated. The ingestion UI doesn't talk to the LangGraph server at all; it ingests data on its own.
 
-1. docker run --rm --init --ulimit core=0 -p 8070:8070 grobid/grobid:0.9.0-crf ( To start the grobid cpu only lightweight version)
+Because the two are separate, switching between local dev and a real deployment is just a config change in `.env`, no code changes needed.
 
-## Todo
+## Running locally
 
-After this I will remove the grobID and change the embedding model to an hosted one like voyage AI
+1. **Clone and install**
+   ```
+   uv sync
+   ```
+2. **Configure `.env`**: copy [.env.example](.env.example) to `.env` and fill in real values (Anthropic, Chroma Cloud, HuggingFace, optionally Semantic Scholar and LangSmith). For local dev, `LANGGRAPH_CLIENT_URL` should stay `http://localhost:2024`.
+3. **Start everything at once:**
+   ```
+   uv run python -m src.dev
+   ```
+   This launches `langgraph dev`, the chat UI (http://localhost:7860), and the ingestion UI (http://localhost:7861) together, and stops all three cleanly on Ctrl+C.
 
-## Objective
+   Or run each separately, in three terminals, if you want isolated logs:
+   ```
+   uv run langgraph dev
+   uv run python -m src.UI.agent_ui
+   uv run python -m src.UI.pipeline_ui
+   ```
+4. **Use it**: open the ingestion UI to ingest a new topic (or reuse the existing `llm` one), then open the chat UI, pick a topic, and ask a question.
 
-So I have decided not to host the pipeline building service. I will just maybe turn that into an docker file and add instructions with docker-compose on how to build their own source.
-
-The thing that will be actually deployed are the langgraph server through langgraph cloud and then an next.js frontend that communicates with the langgraph server and all the vector will be stored in chroma cloud
-
-## Things to do now:
-
-1. Change the ChromaDB persistent client to chroma cloud
-2. the embedding client should have a fallback to use the bge model provided by chromaDB if the embedding server is not reachable.
+See [CLAUDE.md](CLAUDE.md) for full implementation detail on every part of this pipeline.

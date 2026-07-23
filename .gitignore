@@ -6,7 +6,7 @@ dist/
 wheels/
 *.egg-info
 
-# Environment variables
+# Secrets -- never commit, use .env.example as the template
 .env
 
 # Virtual environments
@@ -16,4 +16,4 @@ chroma
 notebooks
 .claude/settings.local.json
 .python-version
-CLAUDE.md".env" 
+CLAUDE.md
